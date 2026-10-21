@@ -3,13 +3,14 @@
 Percentages are illustrative defaults for the Indian market. Every allocation table sums to
 exactly 100 and reserves 5-10% for contingency; the budget engine applies context-specific
 adjustments (guest count, location tier, kids' parties, ticketing) on top of these.
+Per-guest spend thresholds are in INR.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.core.models import EventType, Formality
+from app.core.models import EventType, Formality, LocationTier
 
 
 @dataclass(frozen=True)
@@ -32,11 +33,26 @@ class VendorCategory:
 
 @dataclass(frozen=True)
 class EventProfile:
-    """All static planning data for one event type."""
+    """All static planning data for one event type.
+
+    `typical_guests` is the headcount the allocation tables assume. `per_guest_spend` gives,
+    per formality, the INR per-guest budget below which a plan is tight and above which it is
+    generous.
+    """
 
     allocations: Mapping[Formality, Mapping[str, Decimal]]
     milestones: tuple[MilestoneTemplate, ...]
     vendors: tuple[VendorCategory, ...]
+    typical_guests: int
+    per_guest_spend: Mapping[Formality, tuple[Decimal, Decimal]]
+
+
+# Relative price level by location; scales the venue share and the per-guest thresholds.
+LOCATION_PRICE_INDEX: Mapping[LocationTier, Decimal] = {
+    "metro": Decimal("1.25"),
+    "city": Decimal("1.00"),
+    "town": Decimal("0.80"),
+}
 
 
 def _allocations(**rows: tuple[int, int, int]) -> dict[Formality, dict[str, Decimal]]:
@@ -46,6 +62,14 @@ def _allocations(**rows: tuple[int, int, int]) -> dict[Formality, dict[str, Deci
         formality: {category: Decimal(row[i]) for category, row in rows.items()}
         for i, formality in enumerate(formalities)
     }
+
+
+def _spend(
+    casual: tuple[int, int], semi: tuple[int, int], formal: tuple[int, int]
+) -> dict[Formality, tuple[Decimal, Decimal]]:
+    """Build per-formality (tight_below, generous_above) INR per-guest thresholds."""
+    rows: dict[Formality, tuple[int, int]] = {"casual": casual, "semi": semi, "formal": formal}
+    return {formality: (Decimal(low), Decimal(high)) for formality, (low, high) in rows.items()}
 
 
 WEDDING = EventProfile(
@@ -93,6 +117,8 @@ WEDDING = EventProfile(
         VendorCategory("invitations", ("printer", "digital invite designer")),
         VendorCategory("transport", ("car rental", "bus operator")),
     ),
+    typical_guests=200,
+    per_guest_spend=_spend((1_500, 8_000), (2_500, 12_000), (4_000, 20_000)),
 )
 
 BIRTHDAY = EventProfile(
@@ -127,6 +153,8 @@ BIRTHDAY = EventProfile(
         VendorCategory("entertainment", ("DJ", "magician", "game host", "puppeteer")),
         VendorCategory("photography", ("photographer",)),
     ),
+    typical_guests=40,
+    per_guest_spend=_spend((500, 3_000), (800, 5_000), (1_500, 8_000)),
 )
 
 COMMUNITY = EventProfile(
@@ -179,6 +207,8 @@ COMMUNITY = EventProfile(
         VendorCategory("marketing", ("printer", "social media promoter")),
         VendorCategory("decor", ("decorator", "banner printer")),
     ),
+    typical_guests=150,
+    per_guest_spend=_spend((150, 1_500), (300, 2_500), (800, 5_000)),
 )
 
 PROFILES: Mapping[EventType, EventProfile] = {
