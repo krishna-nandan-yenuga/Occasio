@@ -6,7 +6,7 @@ always sum exactly to the total. Percentages are derived from amounts for displa
 """
 
 from collections.abc import Mapping, Sequence
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 
 from app.core.models import Advisory, BudgetLine, EventContext
 from app.core.profiles import LOCATION_PRICE_INDEX, get_profile
@@ -62,8 +62,10 @@ def rebalance(lines: Sequence[BudgetLine], locked: Mapping[str, Decimal]) -> lis
     """Pin the `locked` category amounts and spread the rest of the total over unlocked lines.
 
     The total (sum of current amounts) is preserved. Lines already marked `is_locked` keep
-    their amounts; unlocked lines share what remains in proportion to their current amounts.
-    Raises BudgetError for unknown categories or when locked amounts exceed the total.
+    their amounts; unlocked lines share what remains in proportion to their current amounts,
+    except that an unlocked contingency never drops below MIN_CONTINGENCY_PERCENT while money
+    remains to cover it. Raises BudgetError for unknown categories or when locked amounts
+    exceed the total.
     """
     unknown = set(locked) - {line.category for line in lines}
     if unknown:
@@ -73,7 +75,9 @@ def rebalance(lines: Sequence[BudgetLine], locked: Mapping[str, Decimal]) -> lis
     remainder = total - sum(pinned.values(), Decimal(0))
     if remainder < 0:
         raise BudgetError(f"Locked amounts exceed the total budget by {-remainder}.")
-    amounts = pinned | _spread(remainder, [line for line in lines if line.category not in pinned])
+    amounts = pinned | _spread_keeping_reserve(
+        remainder, [line for line in lines if line.category not in pinned], total
+    )
     return [
         BudgetLine(
             category=line.category,
@@ -84,6 +88,13 @@ def rebalance(lines: Sequence[BudgetLine], locked: Mapping[str, Decimal]) -> lis
         )
         for line in lines
     ]
+
+
+def per_guest_thresholds(context: EventContext) -> tuple[Decimal, Decimal]:
+    """INR per-guest (tight_below, generous_above) for the event, adjusted for location."""
+    low, high = get_profile(context.event_type).per_guest_spend[context.formality]
+    price_index = LOCATION_PRICE_INDEX[context.location_tier]
+    return low * price_index, high * price_index
 
 
 def feasibility(context: EventContext, lines: Sequence[BudgetLine]) -> list[Advisory]:
@@ -138,6 +149,18 @@ def _normalise(shares: dict[str, Decimal], contingency: Decimal) -> dict[str, De
         category: contingency if category == CONTINGENCY else share * scale
         for category, share in shares.items()
     }
+
+
+def _spread_keeping_reserve(
+    remainder: Decimal, free: Sequence[BudgetLine], total: Decimal
+) -> dict[str, Decimal]:
+    """Like `_spread`, but top an unlocked contingency up to the minimum reserve if possible."""
+    amounts = _spread(remainder, free)
+    reserve = (total * MIN_CONTINGENCY_PERCENT / HUNDRED).quantize(CENT, rounding=ROUND_UP)
+    others = [line for line in free if line.category != CONTINGENCY]
+    if amounts.get(CONTINGENCY, reserve) < reserve <= remainder and others:
+        amounts = _spread(remainder - reserve, others) | {CONTINGENCY: reserve}
+    return amounts
 
 
 def _spread(remainder: Decimal, free: Sequence[BudgetLine]) -> dict[str, Decimal]:
@@ -202,9 +225,7 @@ def _check_per_guest_spend(context: EventContext) -> list[Advisory]:
                 message="Per-guest benchmarks are in INR, so per-guest spend was not checked.",
             )
         ]
-    price_index = LOCATION_PRICE_INDEX[context.location_tier]
-    low, high = get_profile(context.event_type).per_guest_spend[context.formality]
-    tight, generous = low * price_index, high * price_index
+    tight, generous = per_guest_thresholds(context)
     per_guest = context.total_budget / context.guest_count
     spend = f"About {per_guest:,.0f} INR per guest"
     tier = context.location_tier

@@ -1,4 +1,3 @@
-from datetime import date
 from decimal import Decimal
 from typing import Any, get_args
 
@@ -6,18 +5,7 @@ import pytest
 
 from app.core.budget import BudgetError, allocate, feasibility, rebalance
 from app.core.models import BudgetLine, EventContext, EventType, Formality, LocationTier
-
-
-def make_context(**overrides: Any) -> EventContext:
-    fields: dict[str, Any] = {
-        "event_type": "birthday",
-        "event_date": date(2026, 12, 5),
-        "guest_count": 40,
-        "total_budget": Decimal("150000"),
-        "location_tier": "city",
-        "formality": "semi",
-    }
-    return EventContext(**(fields | overrides))
+from tests.factories import make_context
 
 
 def by_category(lines: list[BudgetLine]) -> dict[str, BudgetLine]:
@@ -136,6 +124,14 @@ def test_previously_locked_lines_survive_later_rebalance() -> None:
     result = by_category(rebalance(lines, {"catering": Decimal("40000")}))
     assert result["venue"].amount == Decimal("50000")
     assert result["catering"].amount == Decimal("40000")
+    assert sum(line.amount for line in result.values()) == Decimal("150000")
+
+
+def test_rebalance_keeps_minimum_contingency() -> None:
+    lines = allocate(make_context())  # birthday contingency starts at exactly 5%
+    result = by_category(rebalance(lines, {"venue": Decimal("60000")}))
+    assert result["contingency"].amount == Decimal("7500.00")
+    assert not result["contingency"].is_locked
     assert sum(line.amount for line in result.values()) == Decimal("150000")
 
 

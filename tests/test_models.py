@@ -1,30 +1,19 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
 
-from app.core.models import BudgetLine, EventContext, EventType, Formality, Plan
+from app.core.models import BudgetLine, EventType, Formality, Plan
 from app.core.profiles import PROFILES, get_profile
+from tests.factories import make_context
 
 ALL_TABLES = [
     (event_type, formality)
     for event_type in get_args(EventType)
     for formality in get_args(Formality)
 ]
-
-
-def make_context(**overrides: Any) -> EventContext:
-    fields: dict[str, Any] = {
-        "event_type": "birthday",
-        "event_date": date(2026, 12, 5),
-        "guest_count": 40,
-        "total_budget": Decimal("150000"),
-        "location_tier": "city",
-        "formality": "semi",
-    }
-    return EventContext(**(fields | overrides))
 
 
 # Profiles
@@ -72,6 +61,14 @@ def test_vendor_categories_are_budgeted(event_type: EventType) -> None:
         for vendor in profile.vendors:
             assert vendor.category in budgeted
             assert vendor.suggested_vendor_types
+
+
+@pytest.mark.parametrize("event_type", get_args(EventType))
+def test_every_vendor_has_a_booking_milestone(event_type: EventType) -> None:
+    profile = get_profile(event_type)
+    milestone_categories = {m.category for m in profile.milestones}
+    for vendor in profile.vendors:
+        assert vendor.category in milestone_categories
 
 
 def test_community_profile_has_permits_and_accessibility() -> None:

@@ -95,6 +95,7 @@ WEDDING = EventProfile(
         MilestoneTemplate("Book decorator", "decor", 150, ("Book venue",)),
         MilestoneTemplate("Book entertainment", "entertainment", 120, ("Book venue",)),
         MilestoneTemplate("Finalise attire", "attire", 90),
+        MilestoneTemplate("Book bar service", "bar", 90, ("Book caterer",)),
         MilestoneTemplate(
             "Send invitations", "invitations", 63, ("Set budget and guest list", "Book venue")
         ),
@@ -140,6 +141,7 @@ BIRTHDAY = EventProfile(
         MilestoneTemplate("Book caterer", "catering", 28, ("Book venue",)),
         MilestoneTemplate("Book entertainment", "entertainment", 28, ("Book venue",)),
         MilestoneTemplate("Send invitations", "invitations", 21, ("Book venue",)),
+        MilestoneTemplate("Book photographer", "photography", 21, ("Book venue",)),
         MilestoneTemplate("Order cake", "cake", 10),
         MilestoneTemplate("Buy decor and return gifts", "decor", 7),
         MilestoneTemplate("Confirm RSVPs", "planning", 5, ("Send invitations",)),
@@ -188,6 +190,7 @@ COMMUNITY = EventProfile(
             45,
             ("Book venue",),
         ),
+        MilestoneTemplate("Book decorator", "decor", 30, ("Book venue",)),
         MilestoneTemplate("Launch promotion and registrations", "marketing", 30),
         MilestoneTemplate("Brief volunteers", "volunteers", 7, ("Recruit volunteers",)),
         MilestoneTemplate(
