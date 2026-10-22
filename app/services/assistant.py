@@ -97,6 +97,7 @@ def engine_facts(plan: Plan, question: str, today: date) -> dict[str, object]:
     asks = ask_feasibility(plan, question)
     if asks:
         facts["asks"] = asks
+        facts["ask_costs_note"] = "Typical costs are illustrative estimates, not vendor quotes."
     return facts
 
 
@@ -140,7 +141,7 @@ def _verdict(
         verdict = f"over budget by {cost - available - reserve} even after using contingency"
     return {
         "ask": label,
-        "typical_cost_inr": f"{cost} (illustrative estimate)",
+        "typical_cost_inr": str(cost),
         "budget_category": category,
         "category_budget_inr": str(available),
         "verdict": verdict,

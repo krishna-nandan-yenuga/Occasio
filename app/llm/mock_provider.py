@@ -244,7 +244,7 @@ class MockProvider:
         asks = facts.get("asks")
         if isinstance(asks, list) and asks:
             parts = [
-                f"{a['ask']}: typical cost {a['typical_cost_inr']} INR, {a['verdict']}"
+                f"{a['ask']}: typically about {a['typical_cost_inr']} INR, {a['verdict']}"
                 for a in asks
             ]
         else:

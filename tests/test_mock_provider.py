@@ -97,7 +97,7 @@ async def test_answer_prefers_ask_verdicts() -> None:
     plan = make_plan(make_context())
     ask = {"ask": "DJ", "typical_cost_inr": "25000", "verdict": "fits within the budget"}
     answer = await provider.answer_question("A DJ?", plan, {"asks": [ask], "days_until_event": 3})
-    assert answer == "(Demo mode) DJ: typical cost 25000 INR, fits within the budget."
+    assert answer == "(Demo mode) DJ: typically about 25000 INR, fits within the budget."
 
 
 async def test_mock_is_deterministic() -> None:

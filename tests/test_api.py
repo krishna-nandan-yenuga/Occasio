@@ -271,3 +271,29 @@ async def test_llm_routes_are_rate_limited(tmp_path: Path) -> None:
     assert int(limited.headers["retry-after"]) >= 1
     assert limited.headers["x-content-type-options"] == "nosniff"
     assert unlimited.status_code == 200  # reads and edits are not rate limited
+
+
+# static front end
+
+STATIC_BUDGET_BYTES = 60_000
+
+
+async def test_front_end_is_served_with_security_headers(client: AsyncClient) -> None:
+    page = await client.get("/")
+    assert page.status_code == 200
+    assert '<script src="/app.js" defer></script>' in page.text
+    assert "default-src 'self'" in page.headers["content-security-policy"]
+    for asset in ("/app.js", "/styles.css"):
+        assert (await client.get(asset)).status_code == 200
+
+
+def test_front_end_stays_small_and_self_contained() -> None:
+    static = Path(__file__).parent.parent / "app" / "static"
+    files = list(static.iterdir())
+    assert sum(f.stat().st_size for f in files) < STATIC_BUDGET_BYTES
+    html = (static / "index.html").read_text()
+    assert "http://" not in html and "https://" not in html  # no CDN or external assets
+    assert "<style" not in html and " style=" not in html  # nothing inline for the CSP to block
+    script = (static / "app.js").read_text()
+    for unsafe in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "eval(", "new Function"):
+        assert unsafe not in script  # all text goes in via textContent

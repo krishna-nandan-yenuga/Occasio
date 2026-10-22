@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Occasio turns a short description of your event into a budget, timeline and vendor checklist.">
+  <title>Occasio – event planning assistant</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <h1 class="brand">Occasio <span class="tagline">event planning assistant</span></h1>
+      <nav aria-label="Primary">
+        <button type="button" id="new-plan" class="button-quiet" hidden>New plan</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1" class="wrap">
+    <noscript><p class="notice">Occasio needs JavaScript to build your plan.</p></noscript>
+    <p id="alert" class="alert" role="alert" hidden></p>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <!-- Screen 1: intake -->
+    <section id="intake-view" aria-labelledby="intake-heading">
+      <h2 id="intake-heading" tabindex="-1">Tell us about your event</h2>
+
+      <form id="describe-form" class="card">
+        <label for="describe" class="label">Describe your event</label>
+        <p id="describe-hint" class="hint">For example: “Planning my sister’s 30th for about 40 people in Pune, budget 1.5 lakh, in 6 weeks.”</p>
+        <textarea id="describe" name="text" rows="4" maxlength="2000" required aria-describedby="describe-hint"></textarea>
+        <button type="submit" class="button">Help me fill the form</button>
+      </form>
+
+      <form id="context-form" class="card" novalidate>
+        <h3 id="details-heading">Event details</h3>
+        <div id="missing-summary" class="missing-summary" tabindex="-1" hidden>
+          <p>We couldn’t find these in your description. Please fill them in:</p>
+          <ul id="missing-list"></ul>
+        </div>
+        <div id="error-summary" class="error-summary" tabindex="-1" hidden>
+          <p>Please fix the following:</p>
+          <ul id="error-list"></ul>
+        </div>
+
+        <div class="grid">
+          <div class="field" data-field="event_type">
+            <label for="f-event_type" class="label">Type of event</label>
+            <select id="f-event_type" name="event_type" required>
+              <option value="">Choose…</option>
+              <option value="wedding">Wedding</option>
+              <option value="birthday">Birthday</option>
+              <option value="community">Community event</option>
+            </select>
+          </div>
+          <div class="field" data-field="event_date">
+            <label for="f-event_date" class="label">Date</label>
+            <input id="f-event_date" name="event_date" type="date" required>
+          </div>
+          <div class="field" data-field="guest_count">
+            <label for="f-guest_count" class="label">Number of guests</label>
+            <input id="f-guest_count" name="guest_count" type="number" inputmode="numeric" min="1" max="100000" step="1" required>
+          </div>
+          <div class="field" data-field="total_budget">
+            <label for="f-total_budget" class="label">Total budget</label>
+            <input id="f-total_budget" name="total_budget" type="number" inputmode="decimal" min="0" step="0.01" required>
+          </div>
+          <div class="field" data-field="currency">
+            <label for="f-currency" class="label">Currency</label>
+            <input id="f-currency" name="currency" type="text" value="INR" maxlength="3" autocomplete="off" aria-describedby="currency-hint" required>
+            <p id="currency-hint" class="hint">Three-letter code, such as INR.</p>
+          </div>
+          <div class="field" data-field="location_tier">
+            <label for="f-location_tier" class="label">Location</label>
+            <select id="f-location_tier" name="location_tier" required aria-describedby="location-hint">
+              <option value="">Choose…</option>
+              <option value="metro">Metro city</option>
+              <option value="city">Other city</option>
+              <option value="town">Town</option>
+            </select>
+            <p id="location-hint" class="hint">Metro: Mumbai, Delhi NCR, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad.</p>
+          </div>
+          <div class="field" data-field="formality">
+            <label for="f-formality" class="label">Style</label>
+            <select id="f-formality" name="formality" required>
+              <option value="">Choose…</option>
+              <option value="casual">Casual</option>
+              <option value="semi">Semi-formal</option>
+              <option value="formal">Formal</option>
+            </select>
+          </div>
+        </div>
+
+        <fieldset class="extras" data-for="wedding" hidden>
+          <legend>Wedding details</legend>
+          <div class="field" data-field="ceremonies">
+            <label for="f-ceremonies" class="label">Number of ceremonies</label>
+            <input id="f-ceremonies" name="ceremonies" type="number" min="1" max="10" step="1">
+          </div>
+        </fieldset>
+        <fieldset class="extras" data-for="birthday" hidden>
+          <legend>Birthday details</legend>
+          <div class="field" data-field="honoree_age">
+            <label for="f-honoree_age" class="label">Age they are turning</label>
+            <input id="f-honoree_age" name="honoree_age" type="number" min="0" max="130" step="1">
+          </div>
+          <div class="check">
+            <input id="f-kids_party" name="kids_party" type="checkbox">
+            <label for="f-kids_party">It’s a kids’ party</label>
+          </div>
+        </fieldset>
+        <fieldset class="extras" data-for="community" hidden>
+          <legend>Community event details</legend>
+          <div class="check">
+            <input id="f-ticketed" name="ticketed" type="checkbox">
+            <label for="f-ticketed">Ticketed event</label>
+          </div>
+          <div class="check">
+            <input id="f-permits_needed" name="permits_needed" type="checkbox">
+            <label for="f-permits_needed">Needs permits</label>
+          </div>
+        </fieldset>
+
+        <div class="grid">
+          <div class="field" data-field="preferences">
+            <label for="f-preferences" class="label">Preferences <span class="optional">(optional)</span></label>
+            <input id="f-preferences" name="preferences" type="text" aria-describedby="list-hint">
+          </div>
+          <div class="field" data-field="dietary">
+            <label for="f-dietary" class="label">Dietary needs <span class="optional">(optional)</span></label>
+            <input id="f-dietary" name="dietary" type="text" aria-describedby="list-hint">
+          </div>
+          <div class="field" data-field="accessibility_needs">
+            <label for="f-accessibility_needs" class="label">Accessibility needs <span class="optional">(optional)</span></label>
+            <input id="f-accessibility_needs" name="accessibility_needs" type="text" aria-describedby="list-hint">
+          </div>
+        </div>
+        <p id="list-hint" class="hint">Separate several items with commas, for example: vegetarian, jain.</p>
+
+        <button type="submit" class="button">Create my plan</button>
+      </form>
+    </section>
+
+    <!-- Screens 2 and 3: plan dashboard and assistant -->
+    <div id="plan-view" class="plan-layout" hidden>
+      <section class="plan-main" aria-labelledby="plan-heading">
+        <h2 id="plan-heading" tabindex="-1">Your plan</h2>
+        <p id="plan-summary" class="summary"></p>
+
+        <div class="tabs" role="tablist" aria-label="Plan sections">
+          <button type="button" role="tab" id="tab-budget" aria-controls="panel-budget" aria-selected="true">Budget</button>
+          <button type="button" role="tab" id="tab-timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1">Timeline</button>
+          <button type="button" role="tab" id="tab-vendors" aria-controls="panel-vendors" aria-selected="false" tabindex="-1">Vendors</button>
+          <button type="button" role="tab" id="tab-ideas" aria-controls="panel-ideas" aria-selected="false" tabindex="-1">Ideas</button>
+          <button type="button" role="tab" id="tab-advisories" aria-controls="panel-advisories" aria-selected="false" tabindex="-1">Advisories <span class="count" id="advisory-count"></span></button>
+        </div>
+
+        <div role="tabpanel" id="panel-budget" aria-labelledby="tab-budget" tabindex="0" class="panel">
+          <p class="hint">Change an amount to lock that line; unlocked lines rebalance so the total stays the same.</p>
+          <table class="budget">
+            <caption id="budget-caption">Budget split</caption>
+            <thead>
+              <tr><th scope="col">Category</th><th scope="col">Amount</th></tr>
+            </thead>
+            <tbody id="budget-rows"></tbody>
+            <tfoot>
+              <tr><th scope="row">Total</th><td id="budget-total"></td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" tabindex="0" class="panel" hidden>
+          <div id="timeline"></div>
+        </div>
+        <div role="tabpanel" id="panel-vendors" aria-labelledby="tab-vendors" tabindex="0" class="panel" hidden>
+          <ul id="vendors" class="cards"></ul>
+        </div>
+        <div role="tabpanel" id="panel-ideas" aria-labelledby="tab-ideas" tabindex="0" class="panel" hidden>
+          <button type="button" id="regenerate" class="button-quiet">Suggest new ideas</button>
+          <ul id="ideas" class="cards"></ul>
+        </div>
+        <div role="tabpanel" id="panel-advisories" aria-labelledby="tab-advisories" tabindex="0" class="panel" hidden>
+          <ul id="advisories" class="advisories"></ul>
+        </div>
+      </section>
+
+      <section class="assistant card" aria-labelledby="assistant-heading">
+        <h2 id="assistant-heading">Ask about your plan</h2>
+        <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation"></div>
+        <div class="suggestions" aria-label="Suggested questions" role="group">
+          <button type="button" class="chip-button">Can I afford a live band?</button>
+          <button type="button" class="chip-button">What is overdue?</button>
+          <button type="button" class="chip-button">What if we invite 10 more guests?</button>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <label for="question" class="label">Your question</label>
+          <div class="chat-row">
+            <input id="question" name="question" type="text" maxlength="2000" autocomplete="off" required>
+            <button type="submit" class="button">Ask</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p class="wrap">Amounts are planning estimates calculated by Occasio’s rules engine; check quotes with your vendors.</p>
+  </footer>
+</body>
+</html>
