@@ -95,12 +95,16 @@ class ContextDraft(_Output):
 
 
 EXTRA_FIELDS = ("honoree_age", "kids_party", "ceremonies", "ticketed", "permits_needed")
+# Optional details that change the plan for an event type, so intake asks for them when unstated
+# (ticketing raises contingency and permit costs).
+CLARIFYING_FIELDS: dict[EventType, tuple[str, ...]] = {"community": ("ticketed",)}
 
 
 class ContextExtraction(BaseModel):
     """Result of `extract_context`: the fields found, in EventContext shape, and what's missing."""
 
     fields: dict[str, object]
+    # Required EventContext fields that were not found, then unstated CLARIFYING_FIELDS.
     missing_fields: list[str]
 
     @classmethod
@@ -113,6 +117,9 @@ class ContextExtraction(BaseModel):
         if extras:
             data["extras"] = extras
         missing = [name for name in REQUIRED_CONTEXT_FIELDS if getattr(draft, name) is None]
+        if draft.event_type is not None:
+            clarifying = CLARIFYING_FIELDS.get(draft.event_type, ())
+            missing += [name for name in clarifying if getattr(draft, name) is None]
         return cls(fields=data, missing_fields=missing)
 
 

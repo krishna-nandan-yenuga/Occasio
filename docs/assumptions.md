@@ -17,6 +17,14 @@ and can be changed without touching any logic.
 - There is no tracking of actual spending. "Remaining budget" in the assistant means the total
   minus the budget lines of vendors marked **booked**.
 
+## Intake
+
+- A plan needs the event type, date, guest count, total budget, location and style; anything the
+  description does not state is listed as missing and highlighted in the form.
+- For community events, intake also asks whether the event is ticketed when the description does
+  not say, because ticketing raises contingency to 10% and adds to permits & insurance. The form
+  offers Yes / No rather than a checkbox, so "not answered" is distinct from "no".
+
 ## Budget split
 
 Each event type has a table of percentages per formality; every table sums to exactly 100.

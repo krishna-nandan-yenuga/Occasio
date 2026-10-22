@@ -12,6 +12,7 @@ const LISTS = ["preferences", "dietary", "accessibility_needs"];
 const FIELD_LABELS = {
   event_type: "Type of event", event_date: "Date", guest_count: "Number of guests",
   total_budget: "Total budget", currency: "Currency", location_tier: "Location", formality: "Style",
+  ticketed: "Tickets",
 };
 const CATEGORY_LABELS = {
   av_equipment: "Sound & stage", gifts_favors: "Gifts & favours", permits_insurance: "Permits & insurance",
@@ -184,7 +185,7 @@ function fillForm(fields) {
 }
 
 function markMissing(missing) {
-  for (const name of REQUIRED) setNote(name, null);
+  for (const name of Object.keys(FIELD_LABELS)) setNote(name, null);
   for (const name of missing) setNote(name, "missing", "Not in your description – please fill this in.");
   return fillSummary("#missing-summary", "#missing-list", missing);
 }
@@ -204,6 +205,7 @@ function collectContext() {
   for (const name of EXTRAS[context.event_type] || []) {
     const input = field(name);
     if (input.type === "checkbox") context.extras[name] = input.checked;
+    else if (input.tagName === "SELECT" && input.value !== "") context.extras[name] = input.value === "true";
     else if (input.value !== "") context.extras[name] = Number(input.value);
   }
   for (const name of LISTS) {
@@ -534,7 +536,7 @@ function init() {
   $("#describe-form").addEventListener("submit", onDescribe);
   $("#context-form").addEventListener("submit", onCreatePlan);
   field("event_type").addEventListener("change", showExtras);
-  for (const name of REQUIRED) {
+  for (const name of Object.keys(FIELD_LABELS)) {
     field(name).addEventListener("change", () => {
       if (field(name).value) setNote(name, null);
     });

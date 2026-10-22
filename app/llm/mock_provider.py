@@ -61,6 +61,11 @@ ACCESSIBILITY_PATTERNS = {
 MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 UNIT_MULTIPLIER = {"lakh": 100_000, "lac": 100_000, "crore": 10_000_000, "k": 1_000}
 DAYS_PER_UNIT = {"day": 1, "week": 7, "month": 30}
+# Checked in order: "no tickets" must win over "tickets".
+TICKETING_PATTERNS = (
+    (r"\b(free (entry|event|admission)|no tickets?|not ticketed|entry is free)\b", False),
+    (r"\b(ticketed|tickets?|entry fee|paid entry)\b", True),
+)
 
 _GUESTS = re.compile(r"(\d[\d,]*)\s*(?:people|guests|attendees|persons|pax)")
 _BUDGET = re.compile(
@@ -304,6 +309,9 @@ def _extract(text: str, today: date) -> ContextDraft:
         location_tier="metro" if _has_any(text, METROS) else None,
         formality=formality,
         honoree_age=int(age.group(1)) if age and event_type == "birthday" else None,
+        ticketed=next(
+            (value for pattern, value in TICKETING_PATTERNS if re.search(pattern, text)), None
+        ),
         dietary=_matching(text, DIETARY_PATTERNS),
         accessibility_needs=_matching(text, ACCESSIBILITY_PATTERNS),
     )

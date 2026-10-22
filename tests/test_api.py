@@ -97,6 +97,12 @@ async def test_intake_validates_input(client: AsyncClient, payload: dict[str, An
     assert (await client.post("/api/plans/intake", json=payload)).status_code == 422
 
 
+async def test_intake_asks_whether_a_community_event_is_ticketed(client: AsyncClient) -> None:
+    text = "Community mela for ~300 people in Mumbai on 8 Nov, casual, budget 2 lakh"
+    body = (await client.post("/api/plans/intake", json={"text": text})).json()
+    assert body["missing_fields"] == ["ticketed"]
+
+
 async def test_intake_degrades_when_llm_fails(tmp_path: Path) -> None:
     async with make_client(tmp_path, FailingProvider()) as client:
         body = (await client.post("/api/plans/intake", json={"text": DEMO_TEXT})).json()

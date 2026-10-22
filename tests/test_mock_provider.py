@@ -64,7 +64,30 @@ async def test_extracts_the_plan_demo_description() -> None:
         "accessibility_needs": ["wheelchair access"],
         "dietary": ["vegetarian"],
     }.items() <= result.fields.items()
-    assert result.missing_fields == ["location_tier", "formality"]
+    # Not stated, and it changes the budget, so intake asks (PLAN.md demo step 2).
+    assert result.missing_fields == ["location_tier", "formality", "ticketed"]
+
+
+@pytest.mark.parametrize(
+    ("text", "ticketed", "asked"),
+    [
+        ("community fair, ticketed", True, False),
+        ("community fair with an entry fee", True, False),
+        ("community fair, free entry, no tickets", False, False),
+        ("community fair", None, True),
+    ],
+)
+async def test_community_intake_asks_about_tickets_only_when_unstated(
+    text: str, ticketed: bool | None, asked: bool
+) -> None:
+    result = await provider.extract_context(text, TODAY)
+    assert result.fields.get("extras", {}).get("ticketed") == ticketed  # type: ignore[attr-defined]
+    assert ("ticketed" in result.missing_fields) is asked
+
+
+async def test_other_event_types_are_not_asked_about_tickets() -> None:
+    result = await provider.extract_context("a wedding for 200 guests", TODAY)
+    assert "ticketed" not in result.missing_fields
 
 
 @pytest.mark.parametrize(

@@ -62,7 +62,9 @@ A walkthrough in mock mode (no API key), described screen by screen:
    Birthday, a date six weeks from today, 40 guests, ₹1,50,000, INR, Metro city, and age 30.
    A yellow box at the top of the form says *"We couldn't find these in your description: Style"*,
    and the Style field is outlined in amber with the note *"Not in your description – please fill
-   this in."* Focus moves to that box so keyboard and screen-reader users hear it first.
+   this in."* Focus moves to that box so keyboard and screen-reader users hear it first. For a
+   community event it also asks *"Will you sell tickets?"* unless the description says, because
+   ticketing changes the contingency and permit budget.
 2. **Create the plan.** After choosing *Semi-formal* and pressing **Create my plan**, the page
    shows *"Your birthday plan"* with a one-line summary (*3 Dec 2026 · 40 guests · ₹1,50,000 ·
    42 days to go*) and five tabs: Budget, Timeline, Vendors, Ideas, Advisories. The assistant

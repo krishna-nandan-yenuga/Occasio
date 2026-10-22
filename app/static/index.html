@@ -117,9 +117,13 @@
         </fieldset>
         <fieldset class="extras" data-for="community" hidden>
           <legend>Community event details</legend>
-          <div class="check">
-            <input id="f-ticketed" name="ticketed" type="checkbox">
-            <label for="f-ticketed">Ticketed event</label>
+          <div class="field" data-field="ticketed">
+            <label for="f-ticketed" class="label">Will you sell tickets?</label>
+            <select id="f-ticketed" name="ticketed">
+              <option value="">Choose…</option>
+              <option value="true">Yes, it’s ticketed</option>
+              <option value="false">No, entry is free</option>
+            </select>
           </div>
           <div class="check">
             <input id="f-permits_needed" name="permits_needed" type="checkbox">
