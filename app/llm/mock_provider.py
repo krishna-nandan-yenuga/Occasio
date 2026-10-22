@@ -192,6 +192,12 @@ VENDOR_QUESTIONS = {
         "Can you share a set list or plan for the day in advance?",
     ],
 }
+MOCK_ANSWER_FACTS = {
+    "remaining_budget": "Budget not yet committed:",
+    "contingency_available": "contingency:",
+    "days_until_event": "days to go:",
+    "late_items": "overdue:",
+}
 GENERIC_VENDOR_QUESTIONS = [
     "Have you worked an event of this size before, and can we speak to that client?",
     "Who will be our point of contact on the day?",
@@ -234,9 +240,20 @@ class MockProvider:
         return {item.category: item.questions for item in result.vendors}
 
     async def answer_question(self, question: str, plan: Plan, facts: Mapping[str, object]) -> str:
-        """Restate the engine's facts; the mock never computes anything itself."""
-        listed = "; ".join(f"{key.replace('_', ' ')}: {value}" for key, value in facts.items())
-        answer = f"(Demo mode) From your plan: {listed or 'no facts available'}."
+        """Phrase the engine's facts: ask verdicts if any, else money, time and what's next."""
+        asks = facts.get("asks")
+        if isinstance(asks, list) and asks:
+            parts = [
+                f"{a['ask']}: typical cost {a['typical_cost_inr']} INR, {a['verdict']}"
+                for a in asks
+            ]
+        else:
+            parts = [
+                f"{label} {facts[key]}"
+                for key, label in MOCK_ANSWER_FACTS.items()
+                if facts.get(key) not in (None, [], "")
+            ]
+        answer = f"(Demo mode) {'; '.join(parts) or 'No plan facts are available'}."
         return AnswerOutput.model_validate({"answer": answer[:1500]}).answer
 
 

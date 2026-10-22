@@ -5,7 +5,7 @@ from typing import get_args
 import pytest
 
 from app.core.models import EventContext, EventType, Formality, Milestone
-from app.core.timeline import feasibility, horizon_days, schedule, templates
+from app.core.timeline import feasibility, horizon_days, mark_overdue, schedule, templates
 from tests.factories import TODAY, make_context
 
 EVENT_DATE = date(2027, 6, 1)
@@ -92,6 +92,16 @@ def test_milestones_become_overdue_as_time_passes() -> None:
 
     done = first.model_copy(update={"status": "done"})
     assert first.title not in missed_message(context, [done, *rest], later)
+
+
+def test_mark_overdue_only_touches_overdue_todo_items() -> None:
+    first, second, *rest = schedule(make_context(event_date=EVENT_DATE), days_before(60))
+    done = first.model_copy(update={"status": "done"})
+    later = second.due_date + timedelta(days=1)
+    result = mark_overdue([done, second, *rest], later)
+    assert result[0] == done
+    assert result[1].status == "late"
+    assert all(m.status == ("late" if m.due_date < later else "todo") for m in result[1:])
 
 
 @pytest.mark.parametrize("formality", get_args(Formality))

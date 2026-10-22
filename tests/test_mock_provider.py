@@ -85,13 +85,19 @@ async def test_vendor_questions_cover_every_category() -> None:
     VendorQuestionsOutput.model_validate_json(VendorQuestionsOutput(**payload).model_dump_json())
 
 
-async def test_answer_restates_engine_facts() -> None:
+async def test_answer_phrases_engine_facts() -> None:
     plan = make_plan(make_context())
-    answer = await provider.answer_question(
-        "Can I afford a live band?", plan, {"remaining_budget": "16500.00 INR"}
-    )
-    assert "remaining budget: 16500.00 INR" in answer
+    facts = {"remaining_budget": "16500.00", "days_until_event": 12, "late_items": []}
+    answer = await provider.answer_question("How are we doing?", plan, facts)
+    assert answer == "(Demo mode) Budget not yet committed: 16500.00; days to go: 12."
     AnswerOutput.model_validate({"answer": answer})
+
+
+async def test_answer_prefers_ask_verdicts() -> None:
+    plan = make_plan(make_context())
+    ask = {"ask": "DJ", "typical_cost_inr": "25000", "verdict": "fits within the budget"}
+    answer = await provider.answer_question("A DJ?", plan, {"asks": [ask], "days_until_event": 3})
+    assert answer == "(Demo mode) DJ: typical cost 25000 INR, fits within the budget."
 
 
 async def test_mock_is_deterministic() -> None:

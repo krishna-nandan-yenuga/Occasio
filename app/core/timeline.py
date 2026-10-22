@@ -64,6 +64,14 @@ def schedule(context: EventContext, today: date) -> list[Milestone]:
     return sorted(milestones, key=lambda milestone: milestone.due_date)
 
 
+def mark_overdue(milestones: Sequence[Milestone], today: date) -> list[Milestone]:
+    """Copy of `milestones` with every `todo` milestone due before `today` marked late."""
+    return [
+        m.model_copy(update={"status": "late"}) if m.status == "todo" and m.due_date < today else m
+        for m in milestones
+    ]
+
+
 def feasibility(
     context: EventContext, milestones: Sequence[Milestone], today: date
 ) -> list[Advisory]:
