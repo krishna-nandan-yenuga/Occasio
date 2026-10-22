@@ -297,3 +297,58 @@ def test_front_end_stays_small_and_self_contained() -> None:
     script = (static / "app.js").read_text()
     for unsafe in (".innerHTML", ".outerHTML", "insertAdjacentHTML", "eval(", "new Function"):
         assert unsafe not in script  # all text goes in via textContent
+
+
+# regenerate with preferences, request size, production mode
+
+
+async def test_regenerate_ideas_with_new_preferences(client: AsyncClient) -> None:
+    plan = await create(client)
+    response = await client.post(
+        f"/api/plans/{plan['id']}/regenerate-ideas", json={"preferences": ["kid-friendly"]}
+    )
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["context"]["preferences"] == ["kid-friendly"]
+    assert updated["budget"] == plan["budget"]
+
+
+@pytest.mark.parametrize("body", [{"preferences": ["x" * 201]}, {"preferences": "kid"}, {"x": 1}])
+async def test_regenerate_ideas_validates_body(client: AsyncClient, body: dict[str, Any]) -> None:
+    plan = await create(client)
+    response = await client.post(f"/api/plans/{plan['id']}/regenerate-ideas", json=body)
+    assert response.status_code == 422
+
+
+async def test_oversized_body_is_rejected_before_parsing(client: AsyncClient) -> None:
+    response = await client.post("/api/plans/intake", content=b"x" * 70_000)
+    assert response.status_code == 413
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_oversized_streamed_body_is_rejected(client: AsyncClient) -> None:
+    async def chunks() -> AsyncIterator[bytes]:
+        for _ in range(20):
+            yield b'{"text": "' + b"x" * 5_000
+
+    response = await client.post(
+        "/api/plans/intake", content=chunks(), headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 413
+
+
+async def test_production_mode_adds_hsts_and_hides_docs(tmp_path: Path) -> None:
+    settings = Settings(database_path=str(tmp_path / "prod.db"), app_env="prod")
+    app = create_app(settings, MockProvider())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        health = await client.get("/healthz")
+        docs = await client.get("/docs")
+    assert health.headers["strict-transport-security"].startswith("max-age=")
+    assert docs.status_code == 404
+
+
+async def test_dev_docs_page_is_exempt_from_csp(client: AsyncClient) -> None:
+    docs = await client.get("/docs")
+    assert docs.status_code == 200
+    assert "content-security-policy" not in docs.headers
+    assert docs.headers["x-frame-options"] == "DENY"

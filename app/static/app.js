@@ -15,7 +15,7 @@ const FIELD_LABELS = {
 };
 const CATEGORY_LABELS = {
   av_equipment: "Sound & stage", gifts_favors: "Gifts & favours", permits_insurance: "Permits & insurance",
-  bar: "Bar & drinks", planning: "Planning",
+  bar: "Bar & drinks",
 };
 const STATUS = {
   todo: ["○", "To do"], done: ["✓", "Done"], late: ["!", "Late"],
@@ -77,10 +77,9 @@ function announce(message) {
   announce.timer = window.setTimeout(() => { status.textContent = ""; }, 6000);
 }
 
+/** The alert stays in the accessibility tree (collapsed when empty) so changes are announced. */
 function showError(message) {
-  const alert = $("#alert");
-  alert.textContent = message;
-  alert.hidden = !message;
+  $("#alert").textContent = message;
 }
 
 // ---------- API ----------
@@ -324,7 +323,7 @@ function renderPlan(plan) {
   renderBudget(plan);
   renderTimeline(plan.timeline);
   renderVendors(plan.vendors);
-  renderIdeas(plan.ideas);
+  renderIdeas(plan.ideas, ctx.preferences);
   renderAdvisories(plan.advisories);
   if (focusKey) $(`[data-key="${CSS.escape(focusKey)}"]`)?.focus();
 }
@@ -416,7 +415,9 @@ function renderVendors(vendors) {
   }));
 }
 
-function renderIdeas(ideas) {
+function renderIdeas(ideas, preferences) {
+  const input = $("#idea-preferences");
+  if (document.activeElement !== input) input.value = preferences.join(", ");
   const list = ideas.length
     ? ideas.map((idea) => el("li", {},
       el("span", { class: "chip chip-category" }, label(idea.category)),
@@ -453,8 +454,11 @@ function patchPlan(body, message) {
 }
 
 async function onRegenerate(event) {
-  const plan = await withBusy(event.currentTarget, "Thinking up ideas…", () =>
-    api(`/api/plans/${state.plan.id}/regenerate-ideas`, { method: "POST" }));
+  event.preventDefault();
+  const preferences = $("#idea-preferences").value.split(",").map((p) => p.trim()).filter(Boolean);
+  const button = event.submitter || $("button", event.currentTarget);
+  const plan = await withBusy(button, "Thinking up ideas…", () =>
+    api(`/api/plans/${state.plan.id}/regenerate-ideas`, { method: "POST", body: { preferences } }));
   if (!plan) return;
   renderPlan(plan);
   announce(`${plan.ideas.length} new ideas ready.`);
@@ -491,8 +495,11 @@ function addMessage(who, text, extra) {
 
 async function ask(question) {
   addMessage("You", question);
+  const suggestions = $$(".suggestions button");
+  for (const button of suggestions) button.disabled = true;
   const reply = await withBusy($("#chat-form button"), "Asking…", () =>
-    api(`/api/plans/${state.plan.id}/chat`, { method: "POST", body: { question } }));
+    api(`/api/plans/${state.plan.id}/chat`, { method: "POST", body: { question } }))
+    .finally(() => { for (const button of suggestions) button.disabled = false; });
   if (!reply) return;
   addMessage("Occasio", reply.answer, reply.degraded ? "The assistant is offline, so this is a summary of your plan." : null);
 }
@@ -536,7 +543,7 @@ function init() {
     tab.addEventListener("click", () => selectTab(tab));
     tab.addEventListener("keydown", onTabKey);
   }
-  $("#regenerate").addEventListener("click", onRegenerate);
+  $("#ideas-form").addEventListener("submit", onRegenerate);
   $("#chat-form").addEventListener("submit", onChat);
   for (const button of $$(".suggestions button")) {
     button.addEventListener("click", () => ask(button.textContent));

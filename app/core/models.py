@@ -44,10 +44,16 @@ class EventContext(_Model):
     location_tier: LocationTier
     formality: Formality
     # Type-specific fields, e.g. ceremonies, honoree_age, ticketed, permits_needed.
-    extras: dict[ShortText, str | int | bool] = Field(default_factory=dict, max_length=20)
+    extras: dict[ShortText, ShortText | int | bool] = Field(default_factory=dict, max_length=20)
     preferences: list[ShortText] = Field(default_factory=list, max_length=20)
     accessibility_needs: list[ShortText] = Field(default_factory=list, max_length=20)
     dietary: list[ShortText] = Field(default_factory=list, max_length=20)
+
+
+# Fields a user must supply (the rest have defaults), in form order.
+REQUIRED_CONTEXT_FIELDS = tuple(
+    name for name, info in EventContext.model_fields.items() if info.is_required()
+)
 
 
 class BudgetLine(_Model):

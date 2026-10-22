@@ -1,3 +1,5 @@
+"""Assistant: engine facts, costing common asks, and the offline fallback answer."""
+
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -80,6 +82,16 @@ def test_extra_guests_are_costed_from_catering() -> None:
 def test_alcohol_ask_at_kids_party() -> None:
     plan = plan_with(extras={"honoree_age": 7})
     assert asks(plan, "Can we serve drinks?") == {"open bar": "not suitable for a kids' party"}
+
+
+def test_sound_and_stage_use_the_plan_s_own_budget_lines() -> None:
+    community = ask_feasibility(plan_with(event_type="community"), "a sound system and a stage?")
+    assert [(a["ask"], a["budget_category"]) for a in community] == [
+        ("sound system", "av_equipment"),
+        ("stage", "av_equipment"),
+    ]
+    birthday = ask_feasibility(plan_with(), "a sound system and a stage?")
+    assert [a["budget_category"] for a in birthday] == ["entertainment", "decor"]
 
 
 def test_asks_need_inr() -> None:

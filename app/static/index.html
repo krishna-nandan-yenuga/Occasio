@@ -24,7 +24,7 @@
 
   <main id="main" tabindex="-1" class="wrap">
     <noscript><p class="notice">Occasio needs JavaScript to build your plan.</p></noscript>
-    <p id="alert" class="alert" role="alert" hidden></p>
+    <p id="alert" class="alert" role="alert"></p>
     <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <!-- Screen 1: intake -->
@@ -181,7 +181,14 @@
           <ul id="vendors" class="cards"></ul>
         </div>
         <div role="tabpanel" id="panel-ideas" aria-labelledby="tab-ideas" tabindex="0" class="panel" hidden>
-          <button type="button" id="regenerate" class="button-quiet">Suggest new ideas</button>
+          <form id="ideas-form" class="ideas-form">
+            <label for="idea-preferences" class="label">What should the ideas lean towards? <span class="optional">(optional)</span></label>
+            <p id="idea-preferences-hint" class="hint">Separate with commas, for example: kid-friendly, outdoors.</p>
+            <div class="chat-row">
+              <input id="idea-preferences" name="preferences" type="text" maxlength="400" aria-describedby="idea-preferences-hint">
+              <button type="submit" class="button-quiet">Suggest new ideas</button>
+            </div>
+          </form>
           <ul id="ideas" class="cards"></ul>
         </div>
         <div role="tabpanel" id="panel-advisories" aria-labelledby="tab-advisories" tabindex="0" class="panel" hidden>

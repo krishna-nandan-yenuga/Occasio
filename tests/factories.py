@@ -1,3 +1,5 @@
+"""Shared test data: a fixed clock, a demo context and plan, and a failing provider."""
+
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal

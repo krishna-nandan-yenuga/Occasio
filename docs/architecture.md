@@ -17,6 +17,7 @@ flowchart TB
     subgraph Services["app/services"]
         Planner["planner.py<br/>generate · patch · refresh"]
         Assistant["assistant.py<br/>engine facts · ask costing"]
+        Cache["ideas_cache.py<br/>LRU by context hash"]
     end
 
     subgraph Core["app/core  (pure, deterministic)"]
@@ -43,6 +44,7 @@ flowchart TB
     Routes --> Assistant
     Routes --> DB
     Planner --> Core
+    Planner --> Cache
     Assistant --> Core
     Planner --> Provider
     Assistant --> Provider
@@ -61,6 +63,7 @@ flowchart TB
 | `app/services` | Orchestration | Runs the engine, calls the LLM, merges, degrades gracefully. |
 | `app/storage` | Persistence | One SQLite table; plans are JSON documents; parameterised SQL only. |
 | `app/api` | HTTP | Validation, status codes, rate limiting, and the clock (`get_today`, `get_now`). |
+| `app/middleware.py` | Every request | Security headers; 413 for bodies over 64 KB. |
 | `app/static` | UI | Vanilla HTML/CSS/JS, no inline code, so it runs under a strict CSP. |
 
 ## Generating a plan
@@ -97,7 +100,8 @@ sequenceDiagram
    `schedule` dates the milestones backwards from the event, compressing them when time is
    short. `checklist` lists vendors with a book-by date taken from the timeline.
 2. **LLM enrichment.** Ideas and extra vendor questions are requested at the same time with
-   `asyncio.gather(..., return_exceptions=True)`, so one failing does not lose the other.
+   `asyncio.gather(..., return_exceptions=True)`, so one failing does not lose the other. Ideas
+   come from the in-memory `IdeasCache` when the same context and budget were seen before.
 3. **Advisories.** `decisions.advise` gathers budget feasibility, runway and overdue checks, plus
    cross-cutting rules (venue too small for the guest count, catering too thin, alcohol at a
    kids' party, unfunded permits or accessibility), sorted most severe first.
@@ -108,6 +112,8 @@ sequenceDiagram
   unlocked lines in proportion), and sets milestone and vendor statuses. The plan is then
   refreshed: overdue milestones are marked late and advisories recomputed.
 - **GET** returns the stored plan refreshed for today, without saving.
+- **Regenerate ideas** optionally replaces the preferences, asks for new ideas and stores them in
+  the cache; the budget and timeline are left as they are.
 - **Chat**: `assistant.engine_facts` computes remaining budget, contingency, budget per guest,
   days to go, the next three milestones, late items and, for asks it recognises ("a live band",
   "10 more guests"), a costed verdict. Only these facts are given to the LLM for numbers.

@@ -1,3 +1,5 @@
+"""Input sanitising and prompt-injection heuristics."""
+
 import logging
 
 import pytest

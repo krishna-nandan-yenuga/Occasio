@@ -1,12 +1,16 @@
+"""Planner: generation, LLM degradation, ideas cache, patches and refresh."""
+
+from collections.abc import Sequence
 from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 
-from app.core.models import Plan
+from app.core.models import BudgetLine, EventContext, Idea, Plan
 from app.core.vendors import checklist
 from app.llm.mock_provider import MockProvider
 from app.services import planner
+from app.services.ideas_cache import IdeasCache
 from app.services.planner import PlanPatch, PlanUpdateError
 from tests.factories import NOW, TODAY, FailingProvider, make_context
 
@@ -59,7 +63,9 @@ async def test_partial_llm_failure_keeps_what_succeeded() -> None:
 
 async def test_unexpected_errors_are_not_swallowed() -> None:
     class Broken(MockProvider):
-        async def generate_ideas(self, *args: object) -> list:  # type: ignore[override]
+        async def generate_ideas(
+            self, context: EventContext, budget: Sequence[BudgetLine]
+        ) -> list[Idea]:
             raise RuntimeError("bug")
 
     with pytest.raises(RuntimeError, match="bug"):
@@ -137,6 +143,44 @@ async def test_refresh_marks_newly_overdue_milestones() -> None:
     assert refreshed.timeline[0].status == "late"
     assert "MISSED_MILESTONE" in codes(refreshed)
     assert refreshed.updated_at == plan.updated_at
+
+
+class CountingProvider(MockProvider):
+    def __init__(self) -> None:
+        self.idea_calls = 0
+
+    async def generate_ideas(
+        self, context: EventContext, budget: Sequence[BudgetLine]
+    ) -> list[Idea]:
+        self.idea_calls += 1
+        return await super().generate_ideas(context, budget)
+
+
+async def test_identical_plans_reuse_cached_ideas() -> None:
+    provider, cache = CountingProvider(), IdeasCache()
+    first = await planner.generate(make_context(), TODAY, provider, ideas_cache=cache)
+    second = await planner.generate(make_context(), TODAY, provider, ideas_cache=cache)
+    other = await planner.generate(make_context(guest_count=80), TODAY, provider, ideas_cache=cache)
+    assert provider.idea_calls == 2
+    assert first.ideas == second.ideas and other.ideas
+
+
+async def test_regenerate_with_preferences_keeps_budget_and_refreshes_cache() -> None:
+    provider, cache = CountingProvider(), IdeasCache()
+    plan = await generate()
+    updated = await planner.regenerate_ideas(
+        plan, TODAY, provider, NOW, preferences=["kid-friendly"], ideas_cache=cache
+    )
+    assert updated.context.preferences == ["kid-friendly"]
+    assert updated.budget == plan.budget and updated.timeline == plan.timeline
+    assert cache.get(IdeasCache.key(updated.context, updated.budget)) == updated.ideas
+
+
+async def test_failed_regenerate_keeps_old_preferences_and_ideas() -> None:
+    plan = await generate(preferences=["retro"])
+    failed = await planner.regenerate_ideas(plan, TODAY, FailingProvider(), NOW, preferences=["x"])
+    assert failed.context.preferences == ["retro"] and failed.ideas == plan.ideas
+    assert "LLM_UNAVAILABLE" in codes(failed)
 
 
 async def test_refresh_keeps_llm_advisory_until_ideas_regenerate() -> None:

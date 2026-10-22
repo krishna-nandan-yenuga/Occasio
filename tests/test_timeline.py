@@ -1,3 +1,5 @@
+"""Timeline engine: scheduling, compression, late detection and determinism."""
+
 import math
 from datetime import date, timedelta
 from typing import get_args

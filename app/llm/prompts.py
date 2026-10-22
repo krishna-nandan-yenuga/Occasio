@@ -14,6 +14,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.models import (
+    REQUIRED_CONTEXT_FIELDS,
     BudgetLine,
     EventContext,
     EventType,
@@ -93,14 +94,6 @@ class ContextDraft(_Output):
     dietary: list[ShortText] = Field(default_factory=list, max_length=20)
 
 
-REQUIRED_FIELDS = (
-    "event_type",
-    "event_date",
-    "guest_count",
-    "total_budget",
-    "location_tier",
-    "formality",
-)
 EXTRA_FIELDS = ("honoree_age", "kids_party", "ceremonies", "ticketed", "permits_needed")
 
 
@@ -119,7 +112,7 @@ class ContextExtraction(BaseModel):
             data["total_budget"] = Decimal(f"{data['total_budget']:.2f}")
         if extras:
             data["extras"] = extras
-        missing = [name for name in REQUIRED_FIELDS if getattr(draft, name) is None]
+        missing = [name for name in REQUIRED_CONTEXT_FIELDS if getattr(draft, name) is None]
         return cls(fields=data, missing_fields=missing)
 
 

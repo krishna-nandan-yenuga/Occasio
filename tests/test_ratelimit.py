@@ -1,3 +1,5 @@
+"""Token-bucket rate limiter with a fake clock."""
+
 from app.api.ratelimit import RateLimiter
 
 

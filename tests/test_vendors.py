@@ -1,3 +1,5 @@
+"""Vendor checklist: booking dates and context-driven questions."""
+
 from datetime import date, timedelta
 from typing import get_args
 

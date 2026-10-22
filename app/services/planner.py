@@ -2,7 +2,8 @@
 
 The engine always produces a complete plan; the LLM only adds ideas and vendor questions. If
 an LLM call fails, the plan is still returned, carrying an LLM_UNAVAILABLE advisory until
-ideas are regenerated successfully.
+ideas are regenerated successfully. Ideas for an identical context and budget come from an
+optional IdeasCache instead of the LLM.
 """
 
 import asyncio
@@ -21,6 +22,7 @@ from app.core.models import (
     Advisory,
     BudgetLine,
     EventContext,
+    Idea,
     Milestone,
     Money,
     Plan,
@@ -31,6 +33,7 @@ from app.core.models import (
 from app.core.timeline import mark_overdue, schedule
 from app.core.vendors import checklist
 from app.llm.provider import LLMError, LLMProvider
+from app.services.ideas_cache import IdeasCache
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +98,14 @@ async def generate(
     *,
     plan_id: str | None = None,
     now: datetime | None = None,
+    ideas_cache: IdeasCache | None = None,
 ) -> Plan:
     """Build a plan: engine first, then ideas and vendor questions from the LLM concurrently."""
     budget = allocate(context)
     timeline = schedule(context, today)
     vendors = checklist(context, timeline)
     ideas_result, questions_result = await asyncio.gather(
-        provider.generate_ideas(context, budget),
+        _ideas(context, budget, provider, ideas_cache),
         provider.enrich_vendors(context, vendors),
         return_exceptions=True,
     )
@@ -146,15 +150,47 @@ def apply_patch(plan: Plan, patch: PlanPatch, today: date, now: datetime) -> Pla
     return refresh(patched, today)
 
 
-async def regenerate_ideas(plan: Plan, today: date, provider: LLMProvider, now: datetime) -> Plan:
-    """Replace the plan's ideas; on LLM failure keep the old ones and flag LLM_UNAVAILABLE."""
+async def regenerate_ideas(
+    plan: Plan,
+    today: date,
+    provider: LLMProvider,
+    now: datetime,
+    *,
+    preferences: Sequence[str] | None = None,
+    ideas_cache: IdeasCache | None = None,
+) -> Plan:
+    """Ask for fresh ideas, optionally with new preferences; the budget is not recomputed.
+
+    On LLM failure the old ideas (and preferences) are kept and LLM_UNAVAILABLE is flagged.
+    """
+    context = plan.context
+    if preferences is not None:
+        context = context.model_copy(update={"preferences": list(preferences)})
     try:
-        ideas, failed = await provider.generate_ideas(plan.context, plan.budget), False
+        ideas = await provider.generate_ideas(context, plan.budget)
     except LLMError as error:
         logger.warning("Regenerating ideas failed: %s", error)
-        ideas, failed = plan.ideas, True
-    updated = plan.model_copy(update={"ideas": ideas, "updated_at": now})
-    return _rederive(updated, today, llm_failed=failed)
+        return _rederive(plan.model_copy(update={"updated_at": now}), today, llm_failed=True)
+    if ideas_cache is not None:
+        ideas_cache.put(IdeasCache.key(context, plan.budget), ideas)
+    updated = plan.model_copy(update={"context": context, "ideas": ideas, "updated_at": now})
+    return _rederive(updated, today, llm_failed=False)
+
+
+async def _ideas(
+    context: EventContext,
+    budget: Sequence[BudgetLine],
+    provider: LLMProvider,
+    cache: IdeasCache | None,
+) -> list[Idea]:
+    """Ideas from the cache when this exact context and budget were seen before, else the LLM."""
+    key = IdeasCache.key(context, budget)
+    if cache is not None and (cached := cache.get(key)) is not None:
+        return cached
+    ideas = await provider.generate_ideas(context, budget)
+    if cache is not None:
+        cache.put(key, ideas)
+    return ideas
 
 
 def _rederive(plan: Plan, today: date, *, llm_failed: bool) -> Plan:

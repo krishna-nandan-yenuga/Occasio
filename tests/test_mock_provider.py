@@ -1,3 +1,5 @@
+"""Mock provider: rule-based extraction, canned content and the provider factory."""
+
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import get_args
@@ -46,6 +48,58 @@ async def test_extracts_the_demo_description() -> None:
 async def test_extracts_common_phrasings(text: str, expected: dict[str, object]) -> None:
     fields = (await provider.extract_context(text, TODAY)).fields
     assert expected.items() <= fields.items()
+
+
+async def test_extracts_the_plan_demo_description() -> None:
+    text = (
+        "Planning a community Diwali mela for ~300 people on 8 Nov, budget ₹2,00,000, "
+        "need wheelchair access and veg-only food."
+    )
+    result = await provider.extract_context(text, TODAY)
+    assert {
+        "event_type": "community",
+        "event_date": date(2026, 11, 8),
+        "guest_count": 300,
+        "total_budget": Decimal("200000.00"),
+        "accessibility_needs": ["wheelchair access"],
+        "dietary": ["vegetarian"],
+    }.items() <= result.fields.items()
+    assert result.missing_fields == ["location_tier", "formality"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("party on 8th november", date(2026, 11, 8)),
+        ("party on Nov 8th", date(2026, 11, 8)),
+        ("party on 3 March 2027", date(2027, 3, 3)),
+        ("party on 1 Jan", date(2027, 1, 1)),  # already past this year, so next year
+        ("party on 2027-02-14", date(2027, 2, 14)),
+        ("party on 31 Feb", None),
+        ("in 10 days, or on 8 Nov", TODAY + timedelta(days=10)),  # relative wins
+    ],
+)
+async def test_extracts_dates(text: str, expected: date | None) -> None:
+    assert (await provider.extract_context(text, TODAY)).fields.get("event_date") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "dietary"),
+    [
+        ("pure veg menu", ["vegetarian"]),
+        ("non-veg and vegan options", ["vegan"]),
+        ("Jain food, nut allergies", ["jain", "nut allergy"]),
+    ],
+)
+async def test_extracts_dietary_needs(text: str, dietary: list[str]) -> None:
+    assert (await provider.extract_context(text, TODAY)).fields["dietary"] == dietary
+
+
+async def test_date_ordinals_are_not_ages() -> None:
+    fields = (await provider.extract_context("birthday on 8th Nov for 20 guests", TODAY)).fields
+    assert "extras" not in fields
+    fields = (await provider.extract_context("her 30th on 8th Nov", TODAY)).fields
+    assert fields["extras"] == {"honoree_age": 30}
 
 
 async def test_unrecognised_text_reports_every_required_field_missing() -> None:

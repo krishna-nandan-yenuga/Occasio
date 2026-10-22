@@ -78,8 +78,9 @@ A walkthrough in mock mode (no API key), described screen by screen:
 5. **Vendors tab.** One card per vendor (venue, catering, entertainment…) with a *Book by* date,
    suggested vendor types, a status menu (To do / Contacted / Booked) and an expandable
    *"Questions to ask (7)"* list.
-6. **Ideas and Advisories tabs.** Ideas are cards tagged Theme, Menu, Activity, Decor or Gifting,
-   with a **Suggest new ideas** button. For this birthday the Advisories tab says *"No issues
+6. **Ideas and Advisories tabs.** Ideas are cards tagged Theme, Menu, Activity, Decor or Gifting.
+   Above them, *"What should the ideas lean towards?"* takes preferences such as *kid-friendly*;
+   **Suggest new ideas** fetches a new set without touching the budget. For this birthday the Advisories tab says *"No issues
    found. Your plan looks workable."* A semi-formal wedding for 300 guests in Mumbai 30 days away
    on ₹5 lakh instead shows a count on the tab and three warnings, each with a suggested action:
    *"About 1,667 INR per guest is below the roughly 3,125 INR typical for a semi-formal wedding
@@ -99,7 +100,7 @@ A walkthrough in mock mode (no API key), described screen by screen:
 | `POST` | `/api/plans` | Event details → generated and stored plan (201) | Yes |
 | `GET` | `/api/plans/{id}` | Plan, with overdue milestones and advisories updated for today | No |
 | `PATCH` | `/api/plans/{id}` | Lock/unlock budget lines (rebalances), set milestone and vendor status | No |
-| `POST` | `/api/plans/{id}/regenerate-ideas` | Fresh ideas from the LLM | Yes |
+| `POST` | `/api/plans/{id}/regenerate-ideas` | Fresh ideas, optionally with new `preferences`; budget unchanged | Yes |
 | `POST` | `/api/plans/{id}/chat` | Answer a question from engine-computed facts | Yes |
 | `GET` | `/healthz` | Health check | No |
 
@@ -144,7 +145,8 @@ per client IP, on LLM routes), `APP_ENV` (`dev` or `prod`; `prod` hides `/docs` 
 ## Testing
 
 ```bash
-make test        # 800+ tests, no network, no API key
+make test        # 870+ tests, no network, no API key
+make coverage    # fails if app/core drops below 90% (it is at 100%)
 make lint        # ruff check + format check
 make typecheck   # mypy (strict on app/core)
 make audit       # pip-audit on installed dependencies
@@ -163,6 +165,8 @@ make size-check  # fails if the repo or its history exceeds 9 MB
 - **Services, storage, API** (`test_planner_service`, `test_assistant`, `test_repo`,
   `test_ratelimit`, `test_api`): every route through the real app with `httpx.AsyncClient`,
   including validation errors, 404s, degraded LLM paths and 429 rate limiting.
+- **Structure** (`test_code_quality`): every function in `app/` is under 40 lines; ruff
+  enforces a docstring on every module and public function.
 - **Front end**: tests check the page is served with security headers, stays under 60 KB and
   uses no inline code, external assets or `innerHTML`. Accessibility was checked in Chrome with
   axe-core (see below).
@@ -172,7 +176,8 @@ make size-check  # fails if the repo or its history exceeds 9 MB
 - **Secrets**: the API key is read only from the environment or `.env`; `.env` is git-ignored and
   `.env.example` holds no values.
 - **Input validation**: every request body is a Pydantic model that rejects unknown fields, with
-  length limits (2,000 characters for free text, 200 per list item, 20 items per list).
+  length limits (2,000 characters for free text, 200 per list item or extra value, 20 items per
+  list). Bodies over 64 KB are rejected with 413 before parsing, including chunked uploads.
 - **Prompt injection**: user text is normalised, stripped of control and invisible characters and
   of any `<user_input>` tags, capped in length, then wrapped in `<user_input>` delimiters that the
   system prompt declares to be data. Suspicious phrasing is logged (by pattern name, never the
@@ -197,7 +202,11 @@ make size-check  # fails if the repo or its history exceeds 9 MB
   `max_tokens` cap (2k–8k) and an explicit effort level.
 - Prompts are short: compact JSON of the event and the engine's facts only, with no ids,
   timestamps or past ideas.
-- Editing the budget, ticking tasks and reading a plan never call the LLM.
+- **Ideas are cached** in memory by a hash of the event context and budget split, so an identical
+  plan reuses them for free. Regenerating with new preferences changes only the ideas; the
+  budget and timeline are not recomputed.
+- Editing the budget, ticking tasks and reading a plan never call the LLM. SQLite calls in async
+  routes run in a worker thread so they never block the event loop.
 - The front end is three static files (about 45 KB, 13 KB gzipped) with no framework or build.
 - SQLite with a short-lived connection per operation; plans are single JSON documents.
 
@@ -229,14 +238,15 @@ The full list is in **[docs/assumptions.md](docs/assumptions.md)**.
 
 ## Limitations & future work
 
-- **Mock extraction is basic.** Without an API key, absolute dates ("on 8 Nov") and free-form
-  needs ("wheelchair access", "veg-only") are not extracted; the form asks for them instead.
+- **Mock extraction is rule-based.** Without an API key it understands common phrasings (relative
+  and absolute dates, "1.5 lakh", "300 people", "wheelchair access", "veg-only", metro city
+  names) but not arbitrary wording; anything it misses is simply asked for in the form.
 - **No actual spending.** The budget is a plan; recording quotes and payments would make
   "remaining budget" exact.
-- **Ideas are regenerated as they are.** Changing preferences on the plan and caching ideas by
-  event context (to make regeneration free for identical input) are not built yet.
 - **The assistant costs only a handful of common asks** (band, DJ, magician, photographer,
-  videographer, bar, extra guests). Others get the general plan facts.
+  videographer, bar, sound system, stage, extra guests). Others get the general plan facts.
+- **Only preferences can change after creation.** Editing the date, guest count or total budget
+  means creating a new plan.
 - **Single process.** The rate limiter is in memory and SQLite is local, so horizontal scaling
   would need a shared store. Behind a proxy, run uvicorn with `--proxy-headers` so limits apply
   per real client.
@@ -247,12 +257,13 @@ The full list is in **[docs/assumptions.md](docs/assumptions.md)**.
 
 ```
 app/
-  main.py           app factory, security headers, static files, /healthz
+  main.py           app factory, static files, /healthz
+  middleware.py     security headers, request size limit
   config.py         settings from environment
   api/              routes, dependencies, rate limiter
   core/             rules engine (pure, deterministic)
   llm/              provider protocol, Anthropic and mock providers, prompts, sanitising
-  services/         plan generation and the assistant
+  services/         plan generation, ideas cache, the assistant
   storage/          SQLite repository
   static/           index.html, styles.css, app.js
 tests/              pytest suite

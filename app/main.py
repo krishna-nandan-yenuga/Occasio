@@ -1,4 +1,4 @@
-"""FastAPI app factory: routes, security headers, rate limiter, static files, health check.
+"""FastAPI app factory: routes, middleware, rate limiter, ideas cache, static files, health.
 
 No CORS middleware is installed, so browsers keep the API same-origin only.
 """
@@ -9,56 +9,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api import chat, plans
 from app.api.ratelimit import RateLimiter
 from app.config import Settings, get_settings
 from app.llm.provider import LLMProvider, get_provider
+from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+from app.services.ideas_cache import IdeasCache
 from app.storage.repo import PlanRepository
 
 STATIC_DIR = Path(__file__).parent / "static"
-SECURITY_HEADERS = {
-    "content-security-policy": (
-        "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; "
-        "form-action 'self'; frame-ancestors 'none'"
-    ),
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
-    "referrer-policy": "no-referrer",
-    "permissions-policy": "camera=(), microphone=(), geolocation=()",
-    "cross-origin-opener-policy": "same-origin",
-}
-HSTS = "max-age=31536000; includeSubDomains"
-# Swagger UI loads its assets from a CDN, which the strict CSP above would block.
-DOCS_PATHS = ("/docs", "/redoc")
-
-
-class SecurityHeadersMiddleware:
-    """Adds SECURITY_HEADERS (and HSTS in production) to every HTTP response."""
-
-    def __init__(self, app: ASGIApp, production: bool) -> None:
-        self.app = app
-        self.headers = [(k.encode(), v.encode()) for k, v in SECURITY_HEADERS.items()]
-        if production:
-            self.headers.append((b"strict-transport-security", HSTS.encode()))
-        self.production = production
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        exempt = not self.production and scope["path"].startswith(DOCS_PATHS)
-
-        async def send_with_headers(message: Message) -> None:
-            if message["type"] == "http.response.start":
-                headers = self.headers
-                if exempt:
-                    headers = [h for h in headers if h[0] != b"content-security-policy"]
-                message["headers"] = [*message.get("headers", []), *headers]
-            await send(message)
-
-        await self.app(scope, receive, send_with_headers)
 
 
 def create_app(settings: Settings | None = None, provider: LLMProvider | None = None) -> FastAPI:
@@ -81,6 +41,9 @@ def create_app(settings: Settings | None = None, provider: LLMProvider | None = 
     app.state.repo = repo
     app.state.provider = provider or get_provider(settings)
     app.state.rate_limiter = RateLimiter(settings.rate_limit_per_minute)
+    app.state.ideas_cache = IdeasCache()
+    # Added last = outermost, so even 413 responses carry the security headers.
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware, production=production)
     app.include_router(plans.router)
     app.include_router(chat.router)

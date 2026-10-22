@@ -2,7 +2,8 @@
 
 Responses are canned per event type and pass through the same Pydantic output schemas as the
 real provider. Extraction uses simple keyword and regex rules, enough for typical demo input
-such as "my sister's 30th for ~40 people in Pune, budget 1.5 lakh, in 6 weeks".
+such as "my sister's 30th for ~40 people in Pune, budget 1.5 lakh, in 6 weeks" or "a community
+mela for ~300 people on 8 Nov, budget ₹2,00,000, need wheelchair access and veg-only food".
 """
 
 import re
@@ -23,7 +24,16 @@ from app.llm.sanitize import clean_text
 EVENT_KEYWORDS: dict[EventType, tuple[str, ...]] = {
     "wedding": ("wedding", "marriage", "shaadi", "reception", "sangeet"),
     "birthday": ("birthday", "bday", "turning"),
-    "community": ("community", "festival", "meetup", "fundraiser", "fair", "drive", "cleanup"),
+    "community": (
+        "community",
+        "festival",
+        "mela",
+        "meetup",
+        "fundraiser",
+        "fair",
+        "drive",
+        "cleanup",
+    ),
 }
 METROS = (
     "mumbai", "delhi", "gurgaon", "gurugram", "noida", "bengaluru", "bangalore",
@@ -33,7 +43,22 @@ FORMALITY_KEYWORDS = {
     "formal": ("formal", "black tie", "black-tie", "gala"),
     "casual": ("casual", "intimate", "house party", "relaxed", "potluck"),
 }
-DIETARY_KEYWORDS = ("vegetarian", "vegan", "jain", "gluten-free", "halal", "nut allergy")
+DIETARY_PATTERNS = {
+    "vegetarian": r"(?<!non-)(?<!non )\b(?:vegetarian|veg(?:-| )only|pure veg|veg)\b",
+    "vegan": r"\bvegan\b",
+    "jain": r"\bjain\b",
+    "gluten-free": r"\bgluten[- ]free\b",
+    "halal": r"\bhalal\b",
+    "nut allergy": r"\bnut[- ]allerg(?:y|ies)\b",
+}
+ACCESSIBILITY_PATTERNS = {
+    "wheelchair access": r"\bwheel ?chair",
+    "step-free access": r"\bstep[- ]free\b",
+    "sign-language interpreter": r"\bsign[- ]language\b",
+    "hearing loop": r"\bhearing loop\b",
+    "seating for elderly guests": r"\belderly\b",
+}
+MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 UNIT_MULTIPLIER = {"lakh": 100_000, "lac": 100_000, "crore": 10_000_000, "k": 1_000}
 DAYS_PER_UNIT = {"day": 1, "week": 7, "month": 30}
 
@@ -42,6 +67,10 @@ _BUDGET = re.compile(
     r"(?:budget|₹|rs\.?|inr)\D{0,12}(\d[\d,]*(?:\.\d+)?)\s*(lakhs?|lacs?|crores?|k)?\b"
 )
 _RUNWAY = re.compile(r"\bin\s+(\d+)\s*(day|week|month)s?\b")
+_MONTH = rf"({'|'.join(MONTHS)})[a-z]*\.?"
+_DAY_MONTH = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?{_MONTH}(?:,?\s+(\d{{4}}))?")
+_MONTH_DAY = re.compile(rf"\b{_MONTH}\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?:,?\s+(\d{{4}}))?")
+_ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _ORDINAL_AGE = re.compile(r"\b(\d{1,3})(?:st|nd|rd|th)\b")
 
 IDEAS: dict[EventType, list[tuple[str, str, str]]] = {
@@ -258,24 +287,25 @@ class MockProvider:
 
 
 def _extract(text: str, today: date) -> ContextDraft:
-    age = _ORDINAL_AGE.search(text)
+    # Ordinals inside dates ("8th Nov") are not ages.
+    age = _ORDINAL_AGE.search(_DAY_MONTH.sub(" ", _MONTH_DAY.sub(" ", text)))
     event_type = next((t for t, words in EVENT_KEYWORDS.items() if _has_any(text, words)), None)
     if event_type is None and age:
         event_type = "birthday"
     formality = next((f for f, words in FORMALITY_KEYWORDS.items() if _has_any(text, words)), None)
     budget = _BUDGET.search(text)
     guests = _GUESTS.search(text)
-    runway = _RUNWAY.search(text)
     return ContextDraft(
         event_type=event_type,
-        event_date=_event_date(runway, today),
+        event_date=_event_date(text, today),
         guest_count=int(guests.group(1).replace(",", "")) if guests else None,
         total_budget=_amount(budget) if budget else None,
         currency="INR" if budget else None,
         location_tier="metro" if _has_any(text, METROS) else None,
         formality=formality,
         honoree_age=int(age.group(1)) if age and event_type == "birthday" else None,
-        dietary=[word for word in DIETARY_KEYWORDS if word in text],
+        dietary=_matching(text, DIETARY_PATTERNS),
+        accessibility_needs=_matching(text, ACCESSIBILITY_PATTERNS),
     )
 
 
@@ -283,12 +313,35 @@ def _has_any(text: str, words: Sequence[str]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", text) for word in words)
 
 
+def _matching(text: str, patterns: Mapping[str, str]) -> list[str]:
+    return [label for label, pattern in patterns.items() if re.search(pattern, text)]
+
+
 def _amount(match: re.Match[str]) -> float:
     unit = (match.group(2) or "").rstrip("s")
     return float(match.group(1).replace(",", "")) * UNIT_MULTIPLIER.get(unit, 1)
 
 
-def _event_date(match: re.Match[str] | None, today: date) -> date | None:
-    if match is None:
+def _event_date(text: str, today: date) -> date | None:
+    """A relative ("in 6 weeks") or absolute ("8 Nov", "Nov 8th", "2026-11-08") event date."""
+    if runway := _RUNWAY.search(text):
+        return today + timedelta(days=int(runway.group(1)) * DAYS_PER_UNIT[runway.group(2)])
+    if iso := _ISO_DATE.search(text):
+        return _calendar_date(int(iso.group(3)), int(iso.group(2)), int(iso.group(1)), today)
+    for pattern, day_group, month_group in ((_DAY_MONTH, 1, 2), (_MONTH_DAY, 2, 1)):
+        if match := pattern.search(text):
+            year = int(match.group(3)) if match.group(3) else None
+            month = MONTHS.index(match.group(month_group)) + 1
+            return _calendar_date(int(match.group(day_group)), month, year, today)
+    return None
+
+
+def _calendar_date(day: int, month: int, year: int | None, today: date) -> date | None:
+    """That date in `year`, or without a year its next occurrence from today; None if invalid."""
+    try:
+        if year is not None:
+            return date(year, month, day)
+        this_year = date(today.year, month, day)
+        return this_year if this_year >= today else date(today.year + 1, month, day)
+    except ValueError:
         return None
-    return today + timedelta(days=int(match.group(1)) * DAYS_PER_UNIT[match.group(2)])

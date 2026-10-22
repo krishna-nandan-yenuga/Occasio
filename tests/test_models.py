@@ -1,3 +1,5 @@
+"""Domain models and planning profiles: validation and table invariants."""
+
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, get_args
@@ -96,6 +98,7 @@ def test_event_context_defaults() -> None:
         {"event_type": "conference"},
         {"formality": "black-tie"},
         {"preferences": ["x" * 201]},
+        {"extras": {"note": "x" * 201}},
         {"unknown_field": True},
     ],
 )

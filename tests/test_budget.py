@@ -1,3 +1,5 @@
+"""Budget engine: allocation sums, adjustments, rebalancing and feasibility advisories."""
+
 from decimal import Decimal
 from typing import Any, get_args
 

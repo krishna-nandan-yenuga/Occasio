@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.core.budget import CONTINGENCY, is_kids_party
+from app.core.budget import CENT, CONTINGENCY, is_kids_party
 from app.core.models import Plan
 from app.core.profiles import LOCATION_PRICE_INDEX
 from app.llm.provider import LLMError, LLMProvider
@@ -21,22 +21,32 @@ from app.llm.provider import LLMError, LLMProvider
 logger = logging.getLogger(__name__)
 
 NEXT_MILESTONES = 3
-CENT = Decimal("0.01")
 
 
 @dataclass(frozen=True)
 class CommonAsk:
-    """A frequently asked-for extra with an illustrative city-tier cost in INR."""
+    """A frequently asked-for extra with an illustrative city-tier cost in INR.
+
+    `categories` are the budget lines that could pay for it, in order of preference; the first
+    one the plan has is used (a stage is "sound & stage" at a community event, decor otherwise).
+    """
 
     label: str
     pattern: re.Pattern[str]
-    category: str
+    categories: tuple[str, ...]
     typical_cost: Decimal
     per_guest: bool = False
 
+    def category(self, amounts: dict[str, Decimal]) -> str:
+        """The budget line this ask draws on in a plan with these line amounts."""
+        return next((c for c in self.categories if c in amounts), self.categories[-1])
 
-def _ask(label: str, pattern: str, category: str, cost: int, per_guest: bool = False) -> CommonAsk:
-    return CommonAsk(label, re.compile(pattern, re.IGNORECASE), category, Decimal(cost), per_guest)
+
+def _ask(
+    label: str, pattern: str, categories: str, cost: int, per_guest: bool = False
+) -> CommonAsk:
+    compiled = re.compile(pattern, re.IGNORECASE)
+    return CommonAsk(label, compiled, tuple(categories.split()), Decimal(cost), per_guest)
 
 
 COMMON_ASKS = (
@@ -46,6 +56,13 @@ COMMON_ASKS = (
     _ask("photographer", r"\bphotograph(er|y)\b", "photography", 30_000),
     _ask("videographer", r"\bvideo(grapher|graphy)?\b", "photography", 40_000),
     _ask("open bar", r"\b(open bar|alcohol|drinks)\b", "bar", 900, per_guest=True),
+    _ask(
+        "sound system",
+        r"\b(sound system|speakers|pa system)\b",
+        "av_equipment entertainment",
+        30_000,
+    ),
+    _ask("stage", r"\bstage\b", "av_equipment decor", 40_000),
 )
 _EXTRA_GUESTS = re.compile(r"\b(\d{1,5})\s*(?:more|extra|additional)\s*(?:guests|people)\b", re.I)
 
@@ -111,7 +128,7 @@ def ask_feasibility(plan: Plan, question: str) -> list[dict[str, str]]:
     costs: list[tuple[str, str, Decimal]] = [
         (
             ask.label,
-            ask.category,
+            ask.category(amounts),
             ask.typical_cost * index * (context.guest_count if ask.per_guest else 1),
         )
         for ask in COMMON_ASKS

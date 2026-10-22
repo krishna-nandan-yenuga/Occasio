@@ -122,6 +122,8 @@ Illustrative city-tier costs in INR, scaled by the location index:
 | Photographer | Photography | 30,000 |
 | Videographer | Photography | 40,000 |
 | Open bar | Bar | 900 per guest |
+| Sound system | Sound & stage, else Entertainment | 30,000 |
+| Stage | Sound & stage, else Decor | 40,000 |
 | N more guests | Catering | current catering per guest × N |
 
 The verdict is "fits" if the line covers it, "contingency covers it" if line plus contingency
@@ -131,7 +133,8 @@ does, otherwise "over budget by X". Alcohol at a kids' party is always "not suit
 
 - The LLM never produces a number used by the plan. It extracts details from text, writes ideas
   and vendor questions, and phrases answers from facts the engine computed.
-- Without an API key, the **mock provider** stands in. Its extraction uses keyword and pattern
-  rules: it understands phrases like "40 people", "budget 1.5 lakh" and "in 6 weeks", but not
-  absolute dates ("on 8 Nov") or free-form needs ("wheelchair access"). Its ideas and questions
-  are canned per event type.
+- Without an API key, the **mock provider** stands in. Its ideas and questions are canned per
+  event type. Its extraction uses keyword and pattern rules: relative dates ("in 6 weeks"),
+  absolute ones ("8 Nov", "Nov 8th", "2026-11-08"; without a year, the next occurrence), amounts
+  in lakh, crore or k, guest counts, metro city names, common dietary needs ("veg-only", "Jain")
+  and accessibility needs ("wheelchair access", "step-free"). Anything else is left for the form.

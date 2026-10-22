@@ -3,7 +3,7 @@ BIN := $(VENV)/bin
 # 9 MB
 MAX_REPO_KB := 9216
 
-.PHONY: install dev test lint format typecheck audit size-check
+.PHONY: install dev test coverage lint format typecheck audit size-check
 
 $(BIN)/python:
 	python3 -m venv $(VENV)
@@ -17,6 +17,10 @@ dev:
 
 test:
 	$(BIN)/pytest -q
+
+# The rules engine must stay at 90% coverage or more.
+coverage:
+	$(BIN)/pytest -q --cov=app/core --cov-report=term-missing --cov-fail-under=90
 
 lint:
 	$(BIN)/ruff check .

@@ -3,11 +3,11 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import Now, Provider, Repo, StoredPlan, Today, rate_limit
-from app.core.models import EventContext, Plan
-from app.llm.prompts import REQUIRED_FIELDS
+from app.api.deps import Ideas, Now, Provider, Repo, StoredPlan, Today, rate_limit
+from app.core.models import REQUIRED_CONTEXT_FIELDS, EventContext, Plan, ShortText
 from app.llm.provider import LLMError
 from app.services import planner
 from app.services.planner import PlanPatch, PlanUpdateError
@@ -20,6 +20,14 @@ class IntakeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=2000)
+
+
+class RegenerateRequest(BaseModel):
+    """Optional new preferences to steer the next set of ideas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    preferences: list[ShortText] | None = Field(default=None, max_length=20)
 
 
 class IntakeResponse(BaseModel):
@@ -36,19 +44,23 @@ async def intake(body: IntakeRequest, provider: Provider, today: Today) -> Intak
     try:
         result = await provider.extract_context(body.text, today)
     except LLMError:
-        return IntakeResponse(fields={}, missing_fields=list(REQUIRED_FIELDS), degraded=True)
+        return IntakeResponse(
+            fields={}, missing_fields=list(REQUIRED_CONTEXT_FIELDS), degraded=True
+        )
     return IntakeResponse(fields=result.fields, missing_fields=result.missing_fields)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, dependencies=LLM_ROUTE)
 async def create_plan(
-    context: EventContext, provider: Provider, repo: Repo, today: Today, now: Now
+    context: EventContext, provider: Provider, repo: Repo, ideas: Ideas, today: Today, now: Now
 ) -> Plan:
     """Generate and store a plan for the event."""
     if context.event_date < today:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The event date has passed.")
-    plan = await planner.generate(context, today, provider, plan_id=uuid4().hex, now=now)
-    repo.create(plan)
+    plan = await planner.generate(
+        context, today, provider, plan_id=uuid4().hex, now=now, ideas_cache=ideas
+    )
+    await run_in_threadpool(repo.create, plan)
     return plan
 
 
@@ -71,9 +83,18 @@ def update_plan(patch: PlanPatch, plan: StoredPlan, repo: Repo, today: Today, no
 
 @router.post("/{plan_id}/regenerate-ideas", dependencies=LLM_ROUTE)
 async def regenerate_ideas(
-    plan: StoredPlan, provider: Provider, repo: Repo, today: Today, now: Now
+    plan: StoredPlan,
+    provider: Provider,
+    repo: Repo,
+    ideas: Ideas,
+    today: Today,
+    now: Now,
+    body: RegenerateRequest | None = None,
 ) -> Plan:
-    """Ask the LLM for a fresh set of ideas."""
-    updated = await planner.regenerate_ideas(plan, today, provider, now)
-    repo.update(updated)
+    """Ask the LLM for fresh ideas, optionally with new preferences; the budget is unchanged."""
+    preferences = body.preferences if body else None
+    updated = await planner.regenerate_ideas(
+        plan, today, provider, now, preferences=preferences, ideas_cache=ideas
+    )
+    await run_in_threadpool(repo.update, updated)
     return updated
